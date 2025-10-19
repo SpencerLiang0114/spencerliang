@@ -10,53 +10,61 @@ on:
       - '_talks/**'
       - 'talkmap.ipynb'
 
-concurrency:
-  group: scrape-talks-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build:
+    # Skip if this was triggered by the bot's own push (prevents loops/races)
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout (full history)
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        persist-credentials: true
+      - name: Checkout (branch with full history)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}   # ensure we're on the branch (e.g., master)
+          fetch-depth: 0
+          persist-credentials: true
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
+      - name: Ensure local branch (not detached HEAD)
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git checkout -B "$BRANCH"
 
-    - name: Install dependencies
-      run: |
-        pip install jupyter pandas requests beautifulsoup4 geopy
-        pip install --upgrade getorg
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
 
-    - name: Run Jupyter Notebook
-      run: |
-        jupyter nbconvert --to notebook --execute talkmap.ipynb --output talkmap_out.ipynb
+      - name: Install dependencies
+        run: |
+          pip install jupyter pandas requests beautifulsoup4 geopy
+          pip install --upgrade getorg
 
-    - name: Commit changes
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add -A
-        git commit -m "Automated update of talk locations" || echo "No changes to commit"
+      - name: Sync to latest remote (rebase first)
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git fetch origin "$BRANCH"
+          git pull --rebase origin "$BRANCH" || (git rebase --abort; exit 1)
 
-    - name: Rebase onto latest and push
-      env:
-        BRANCH: ${{ github.ref_name }}
-      run: |
-        git fetch origin "$BRANCH"
-        # Rebase our local commit(s) on top of the newest remote commit(s)
-        git pull --rebase origin "$BRANCH" || (git rebase --abort; exit 1)
+      - name: Run Jupyter Notebook
+        run: |
+          jupyter nbconvert --to notebook --execute talkmap.ipynb --output talkmap_out.ipynb
 
-        # Only push if we actually have new commits
-        if [ -n "$(git log origin/$BRANCH..HEAD)" ]; then
-          git push origin HEAD:"$BRANCH"
-        else
-          echo "No changes to push."
-        fi
+      - name: Commit & push
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "Automated update of talk locations [skip ci]" || echo "No changes to commit"
+
+          # Only push if our HEAD is ahead of origin
+          if [ -n "$(git log origin/$BRANCH..HEAD)" ]; then
+            # Safe force in case remote moved since we rebased
+            git push --force-with-lease origin HEAD:"$BRANCH"
+          else
+            echo "No changes to push."
+          fi
