@@ -45,7 +45,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           git fetch origin "$BRANCH"
-          git pull --rebase origin "$BRANCH" || (git rebase --abort; exit 1)
+          git pull --rebase origin "$BRANCH" || (git rebase --abort; git pull --no-rebase origin "$BRANCH")
 
       - name: Run Jupyter Notebook
         run: |
@@ -63,8 +63,8 @@ jobs:
 
           # Only push if our HEAD is ahead of origin
           if [ -n "$(git log origin/$BRANCH..HEAD)" ]; then
-            # Safe force in case remote moved since we rebased
-            git push --force-with-lease origin HEAD:"$BRANCH"
+            # Try normal push first, then force with lease if needed
+            git push origin HEAD:"$BRANCH" || git push --force-with-lease origin HEAD:"$BRANCH"
           else
             echo "No changes to push."
           fi
