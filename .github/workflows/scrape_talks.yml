@@ -19,47 +19,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout (full history)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
+    - name: Checkout (full history)
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: true
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
 
-      - name: Install dependencies
-        run: |
-          pip install jupyter pandas requests beautifulsoup4 geopy
-          pip install --upgrade getorg
+    - name: Install dependencies
+      run: |
+        pip install jupyter pandas requests beautifulsoup4 geopy
+        pip install --upgrade getorg
 
-      - name: Run Jupyter Notebook
-        run: |
-          jupyter nbconvert --to notebook --execute talkmap.ipynb --output talkmap_out.ipynb
+    - name: Run Jupyter Notebook
+      run: |
+        jupyter nbconvert --to notebook --execute talkmap.ipynb --output talkmap_out.ipynb
 
-      - name: Commit changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Automated update of talk locations" || echo "No changes to commit"
+    - name: Commit changes
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add -A
+        git commit -m "Automated update of talk locations" || echo "No changes to commit"
 
-      - name: Rebase onto latest and push
-        env:
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          # Make sure we're on the same branch that triggered the workflow
-          git checkout "$BRANCH"
+    - name: Rebase onto latest and push
+      env:
+        BRANCH: ${{ github.ref_name }}
+      run: |
+        git fetch origin "$BRANCH"
+        # Rebase our local commit(s) on top of the newest remote commit(s)
+        git pull --rebase origin "$BRANCH" || (git rebase --abort; exit 1)
 
-          # Rebase local commits on top of the latest remote
-          git fetch origin "$BRANCH"
-          git pull --rebase origin "$BRANCH" || (echo "Rebase failed"; git rebase --abort; exit 1)
-
-          # Only push when there are commits not on origin
-          if [ -n "$(git log origin/$BRANCH..HEAD)" ]; then
-            git push origin HEAD:"$BRANCH"
-          else
-            echo "No changes to push."
-          fi
+        # Only push if we actually have new commits
+        if [ -n "$(git log origin/$BRANCH..HEAD)" ]; then
+          git push origin HEAD:"$BRANCH"
+        else
+          echo "No changes to push."
+        fi
